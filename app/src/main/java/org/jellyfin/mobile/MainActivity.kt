@@ -12,28 +12,19 @@ import android.view.OrientationEventListener
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.launch
 import org.jellyfin.mobile.cast.Chromecast
 import org.jellyfin.mobile.cast.IChromecast
-import org.jellyfin.mobile.fragment.ConnectFragment
-import org.jellyfin.mobile.fragment.WebViewFragment
 import org.jellyfin.mobile.player.PlayerFragment
-import org.jellyfin.mobile.utils.Constants
+import org.jellyfin.mobile.ui.MainFragment
 import org.jellyfin.mobile.utils.PermissionRequestHelper
 import org.jellyfin.mobile.utils.SmartOrientationListener
 import org.jellyfin.mobile.utils.isWebViewSupported
 import org.jellyfin.mobile.utils.replaceFragment
-import org.jellyfin.mobile.viewmodel.MainViewModel
-import org.jellyfin.mobile.viewmodel.ServerState
 import org.jellyfin.mobile.webapp.RemotePlayerService
 import org.koin.android.ext.android.inject
-import org.koin.android.viewmodel.ext.android.viewModel
 import org.koin.androidx.fragment.android.setupKoinFragmentFactory
 
 class MainActivity : AppCompatActivity() {
-    private val mainViewModel: MainViewModel by viewModel()
     val appPreferences: AppPreferences by inject()
     val chromecast: IChromecast = Chromecast()
     private val permissionRequestHelper: PermissionRequestHelper by inject()
@@ -79,25 +70,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Load UI
-        lifecycleScope.launch {
-            mainViewModel.serverState.collect { state ->
-                with(supportFragmentManager) {
-                    when (state) {
-                        ServerState.Pending -> {
-                            // TODO add loading indicator
-                        }
-                        is ServerState.Unset -> replaceFragment<ConnectFragment>()
-                        is ServerState.Available -> {
-                            val currentFragment = findFragmentById(R.id.fragment_container)
-                            if (currentFragment !is WebViewFragment || currentFragment.server != state.server) {
-                                replaceFragment<WebViewFragment>(Bundle().apply {
-                                    putParcelable(Constants.FRAGMENT_WEB_VIEW_EXTRA_SERVER, state.server)
-                                })
-                            }
-                        }
-                    }
-                }
-            }
+        with(supportFragmentManager) {
+            replaceFragment<MainFragment>()
         }
 
         // Setup Chromecast

@@ -7,6 +7,7 @@ plugins {
     id("com.android.application")
     kotlin("android")
     kotlin("kapt")
+    id("androidx.navigation.safeargs.kotlin")
     id("kotlin-parcelize")
     id("io.gitlab.arturbosch.detekt") version Dependencies.Versions.detekt
     id("de.mannodermaus.android-junit5")
@@ -87,6 +88,16 @@ android {
     @Suppress("UnstableApiUsage")
     buildFeatures {
         viewBinding = true
+        compose = true
+    }
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_1_8.toString()
+        @Suppress("SuspiciousCollectionReassignment")
+        freeCompilerArgs += listOf("-Xopt-in=kotlin.RequiresOptIn")
+    }
+    composeOptions {
+        kotlinCompilerVersion = kotlin.coreLibrariesVersion
+        kotlinCompilerExtensionVersion = Dependencies.Versions.compose
     }
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
@@ -124,13 +135,29 @@ dependencies {
     implementation(Dependencies.Lifecycle.runtime)
     implementation(Dependencies.Lifecycle.common)
     implementation(Dependencies.Lifecycle.process)
+    implementation(Dependencies.Lifecycle.compose)
 
     // UI
     implementation(Dependencies.UI.constraintLayout)
     implementation(Dependencies.UI.material)
+    implementation(Dependencies.UI.palette)
     implementation(Dependencies.UI.webkitX)
     implementation(Dependencies.UI.exoPlayer)
     implementation(Dependencies.UI.modernAndroidPreferences)
+
+    // Jetpack Compose
+    implementation(Dependencies.Compose.runtime)
+    implementation(Dependencies.Compose.ui)
+    implementation(Dependencies.Compose.uiTooling)
+    implementation(Dependencies.Compose.foundation)
+    implementation(Dependencies.Compose.animation)
+    implementation(Dependencies.Compose.material)
+    implementation(Dependencies.Compose.materialIcons)
+    implementation(Dependencies.Compose.materialIconsExtended)
+    implementation(Dependencies.Compose.runtimeLiveData)
+    implementation(Dependencies.Compose.navigation)
+    implementation(Dependencies.Compose.accompanistCoil)
+    implementation(Dependencies.Compose.accompanistPager)
 
     // Room
     implementation(Dependencies.Room.runtime)

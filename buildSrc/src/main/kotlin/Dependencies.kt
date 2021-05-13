@@ -21,8 +21,14 @@ object Dependencies {
         // UI
         const val constraintLayout = "2.0.4"
         const val material = "1.3.0"
+        const val palette = "1.0.0"
         const val webkitX = "1.4.0"
         const val modernAndroidPreferences = "2.1.0"
+
+        // Compose
+        const val compose = "1.0.0-SNAPSHOT"
+        const val navigationCompose = "2.4.0-alpha01"
+        const val accompanist = "0.10.0"
 
         // Room
         const val room = "2.3.0"
@@ -78,14 +84,31 @@ object Dependencies {
         val runtime = lifecycle("runtime-ktx")
         val common = lifecycle("common-java8")
         val process = lifecycle("process")
+        val compose = lifecycle("viewmodel-compose", "1.0.0-alpha05")
     }
 
     object UI {
         val constraintLayout = androidx("constraintlayout", Versions.constraintLayout)
         const val material = "com.google.android.material:material:${Versions.material}"
+        val palette = androidx("palette", Versions.palette)
         val webkitX = androidx("webkit", Versions.webkitX)
         val exoPlayer = exoPlayer("ui")
         const val modernAndroidPreferences = "de.maxr1998:modernandroidpreferences:${Versions.modernAndroidPreferences}"
+    }
+
+    object Compose {
+        val runtime = compose("runtime")
+        val ui = compose("ui")
+        val uiTooling = compose("ui", "tooling")
+        val foundation = compose("foundation")
+        val animation = compose("animation")
+        val material = compose("material")
+        val materialIcons = compose("material", "icons-core")
+        val materialIconsExtended = compose("material", "icons-extended")
+        val runtimeLiveData = compose("runtime", "livedata")
+        val navigation = androidx("navigation", "compose", Versions.navigationCompose)
+        const val accompanistCoil = "com.google.accompanist:accompanist-coil:${Versions.accompanist}"
+        const val accompanistPager = "com.google.accompanist:accompanist-pager:${Versions.accompanist}"
     }
 
     object Room {
@@ -96,7 +119,7 @@ object Dependencies {
     object Network {
         const val jellyfinSdk = "${Groups.jellyfin}:jellyfin-platform-android:${Versions.jellyfinSdk}"
         const val okHttp = "com.squareup.okhttp3:okhttp:${Versions.okHttp}"
-        const val coil = "io.coil-kt:coil-base:${Versions.coil}"
+        const val coil = "io.coil-kt:coil:${Versions.coil}"
         val exoPlayerHLS = exoPlayer("hls")
     }
 
@@ -132,10 +155,12 @@ object Dependencies {
     }
 
     // Helpers
-    private fun androidx(module: String, version: String) = "androidx.$module:$module:$version"
+    private fun androidx(module: String, version: String) = androidx(module, null, version)
+    private fun androidx(module: String, variant: String?, version: String) = "androidx.$module:$module${variant?.let { "-$it" } ?: ""}:$version"
     private fun androidxKtx(module: String, version: String) = "androidx.$module:$module-ktx:$version"
     private fun kotlinx(module: String, version: String) = "org.jetbrains.kotlinx:kotlinx-$module:$version"
-    private fun lifecycle(module: String) = "androidx.lifecycle:lifecycle-$module:${Versions.lifecycleExtensions}"
+    private fun lifecycle(module: String, version: String = Versions.lifecycleExtensions) = "androidx.lifecycle:lifecycle-$module:${version}"
     private fun room(module: String) = "androidx.room:room-$module:${Versions.room}"
+    private fun compose(module: String, variant: String? = null) = "androidx.compose.$module:$module${variant?.let { "-$it" } ?: ""}:${Versions.compose}"
     private fun exoPlayer(module: String) = "com.google.android.exoplayer:exoplayer-$module:${Versions.exoPlayer}"
 }

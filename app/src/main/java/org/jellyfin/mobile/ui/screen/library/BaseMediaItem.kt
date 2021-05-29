@@ -1,5 +1,6 @@
 package org.jellyfin.mobile.ui.screen.library
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -16,20 +17,22 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import org.jellyfin.apiclient.model.dto.BaseItemType
-import org.jellyfin.apiclient.model.entities.ImageType
-import org.jellyfin.mobile.R
-import org.jellyfin.mobile.model.dto.BaseMediaInfo
 import org.jellyfin.mobile.ui.DefaultCornerRounding
 import org.jellyfin.mobile.ui.utils.ApiImage
+import org.jellyfin.sdk.model.api.ImageType
+import java.util.UUID
 
 @Stable
 @Composable
 fun BaseMediaItem(
-    info: BaseMediaInfo,
     modifier: Modifier = Modifier,
+    id: UUID,
+    title: String,
+    subtitle: String? = null,
+    primaryImageTag: String? = null,
+    @DrawableRes fallbackResource: Int = 0,
     imageDecorator: @Composable () -> Unit = {},
-    onClick: () -> Unit = {}
+    onClick: () -> Unit = {},
 ) {
     Column(
         modifier = modifier
@@ -40,19 +43,15 @@ fun BaseMediaItem(
         BoxWithConstraints {
             val imageSize = with(LocalDensity.current) { constraints.maxWidth.toDp() }
             ApiImage(
-                id = info.id,
-                modifier = Modifier.size(imageSize).clip(DefaultCornerRounding),
-                imageType = ImageType.Primary,
-                imageTag = info.primaryImageTag,
+                id = id,
+                modifier = Modifier
+                    .size(imageSize)
+                    .clip(DefaultCornerRounding),
+                imageType = ImageType.PRIMARY,
+                imageTag = primaryImageTag,
                 fallback = {
                     Image(
-                        painter = painterResource(
-                            when (info.itemType) {
-                                BaseItemType.MusicAlbum -> R.drawable.fallback_image_album_cover
-                                BaseItemType.MusicArtist -> R.drawable.fallback_image_person
-                                else -> 0
-                            }
-                        ),
+                        painter = painterResource(fallbackResource),
                         contentDescription = null,
                     )
                 },
@@ -60,12 +59,12 @@ fun BaseMediaItem(
             imageDecorator()
         }
         Text(
-            text = info.title,
-            modifier = Modifier.padding(top = 6.dp, bottom = if (info.subtitle != null) 2.dp else 0.dp),
+            text = title,
+            modifier = Modifier.padding(top = 6.dp, bottom = if (subtitle != null) 2.dp else 0.dp),
             overflow = TextOverflow.Ellipsis,
             maxLines = 1,
         )
-        info.subtitle?.let { subtitle ->
+        subtitle?.let { subtitle ->
             Text(
                 text = subtitle,
                 overflow = TextOverflow.Ellipsis,

@@ -7,7 +7,6 @@ import com.melegy.redscreenofdeath.RedScreenOfDeath
 import org.jellyfin.mobile.api.apiModule
 import org.jellyfin.mobile.controller.controllerModule
 import org.jellyfin.mobile.model.databaseModule
-import org.jellyfin.mobile.ui.uiModule
 import org.jellyfin.mobile.utils.JellyTree
 import org.jellyfin.mobile.utils.isWebViewSupported
 import org.koin.android.ext.koin.androidContext
@@ -42,7 +41,6 @@ class JellyfinApplication : Application() {
                 apiModule,
                 controllerModule,
                 databaseModule,
-                uiModule,
             )
 
             // Set Coil ImageLoader factory

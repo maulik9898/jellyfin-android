@@ -4,63 +4,59 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
-import org.jellyfin.apiclient.model.dto.BaseItemDto
-import org.jellyfin.apiclient.model.dto.BaseItemType
-import org.jellyfin.apiclient.model.entities.CollectionType
-import org.jellyfin.apiclient.model.querying.ArtistsQuery
-import org.jellyfin.apiclient.model.querying.ItemQuery
-import org.jellyfin.apiclient.model.querying.ItemSortBy
-import org.jellyfin.mobile.model.dto.*
+import org.jellyfin.mobile.model.dto.Album
+import org.jellyfin.mobile.model.dto.Artist
+import org.jellyfin.mobile.model.dto.Song
+import org.jellyfin.mobile.model.dto.UserViewInfo
+import org.jellyfin.mobile.model.dto.toSong
 import org.jellyfin.mobile.ui.screen.library.LibraryViewModel
-import org.jellyfin.mobile.utils.getAlbumArtists
-import org.jellyfin.mobile.utils.getItems
+import org.jellyfin.sdk.model.api.ItemFields
 
 class MusicViewModel(viewInfo: UserViewInfo) : LibraryViewModel(viewInfo) {
     val currentTab = mutableStateOf(0)
-    val albums = mutableStateListOf<AlbumInfo>()
-    val artists = mutableStateListOf<ArtistInfo>()
-    val songs = mutableStateListOf<SongInfo>()
+    val albums = mutableStateListOf<Album>()
+    val artists = mutableStateListOf<Artist>()
+    val songs = mutableStateListOf<Song>()
 
     init {
-        require(viewInfo.collectionType == CollectionType.Music) {
+        require(viewInfo.collectionType == "Music") {
             "Invalid ViewModel for collection type ${viewInfo.collectionType}"
         }
 
         viewModelScope.launch {
-            launch {
+            /*launch {
                 apiClient.getItems(buildItemQuery(BaseItemType.MusicAlbum))?.run {
                     albums += items.map(BaseItemDto::toAlbumInfo)
                 }
             }
             launch {
-                apiClient.getAlbumArtists(buildArtistsItemQuery())?.run {
+                apiClient.getAlbumArtists(
+                    userId = apiClient.currentUserId,
+                    parentId = viewInfo.id,
+                    recursive = true,
+                    sortBy = arrayOf(ItemSortBy.SortName),
+                    startIndex = 0,
+                    limit = 100,
+                )?.run {
                     artists += items.map(BaseItemDto::toArtistInfo)
                 }
-            }
+            }*/
             launch {
-                apiClient.getItems(buildItemQuery(BaseItemType.Audio))?.run {
-                    songs += items.map(BaseItemDto::toSongInfo)
+                val result by itemsApi.getItems(
+                    userId = apiController.requireUser(),
+                    parentId = viewInfo.id,
+                    includeItemTypes = listOf("Audio"),
+                    recursive = true,
+                    sortBy = listOf(ItemFields.SORT_NAME.serialName),
+                    startIndex = 0,
+                    limit = 100,
+                )
+
+                songs.clear()
+                result.items?.forEach { item ->
+                    songs += item.toSong()
                 }
             }
         }
-    }
-
-    private fun buildItemQuery(itemType: BaseItemType) = ItemQuery().apply {
-        userId = apiClient.currentUserId
-        parentId = viewInfo.id
-        includeItemTypes = arrayOf(itemType.name)
-        recursive = true
-        sortBy = arrayOf(ItemSortBy.SortName)
-        startIndex = 0
-        limit = 100
-    }
-
-    private fun buildArtistsItemQuery() = ArtistsQuery().apply {
-        userId = apiClient.currentUserId
-        parentId = viewInfo.id
-        recursive = true
-        sortBy = arrayOf(ItemSortBy.SortName)
-        startIndex = 0
-        limit = 100
     }
 }

@@ -87,7 +87,7 @@ class ApiController(
         apiClient.accessToken = accessToken
     }
 
-    private fun resetApiClientUser() {
+    fun resetApiClientUser() {
         currentUser = null
         currentDeviceId = baseDeviceInfo.id
         apiClient.deviceInfo = baseDeviceInfo

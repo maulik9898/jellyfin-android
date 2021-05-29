@@ -4,8 +4,10 @@ import androidx.compose.runtime.Immutable
 import java.util.UUID
 
 @Immutable
-data class FolderInfo(
+data class Song(
     val id: UUID,
-    val name: String,
+    val title: String,
+    val artists: List<String>,
+    val album: UUID?,
     val primaryImageTag: String?,
 )

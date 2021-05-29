@@ -68,10 +68,9 @@ fun ScreenScaffold(
 
 @Composable
 fun ToolbarBackButton() {
-    val backStack = LocalBackStack.current
     IconButton(
         onClick = {
-            backStack.pop()
+            // TODO: go back
         },
     ) {
         Icon(

@@ -1,11 +1,11 @@
 package org.jellyfin.mobile.model.dto
 
-import androidx.compose.runtime.Immutable
 import java.util.UUID
 
-@Immutable
-data class FolderInfo(
+data class MusicVideo(
     val id: UUID,
-    val name: String,
+    val title: String,
+    val artists: List<String>,
+    val album: String?,
     val primaryImageTag: String?,
 )

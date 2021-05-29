@@ -2,55 +2,78 @@ package org.jellyfin.mobile.ui
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.staticCompositionLocalOf
-import com.github.zsoltk.compose.router.BackStack
-import com.github.zsoltk.compose.router.Router
-import org.jellyfin.mobile.controller.ServerController
-import org.jellyfin.mobile.model.dto.AlbumInfo
-import org.jellyfin.mobile.model.dto.ArtistInfo
-import org.jellyfin.mobile.model.dto.UserViewInfo
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavGraphBuilder
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.navArgument
+import androidx.navigation.compose.rememberNavController
+import org.jellyfin.mobile.controller.LoginController
 import org.jellyfin.mobile.model.state.LoginState
+import org.jellyfin.mobile.ui.AppDestinations.ROUTE_ALBUM
+import org.jellyfin.mobile.ui.AppDestinations.ROUTE_ARTIST
+import org.jellyfin.mobile.ui.AppDestinations.ROUTE_COLLECTION
+import org.jellyfin.mobile.ui.AppDestinations.ROUTE_HOME
+import org.jellyfin.mobile.ui.AppDestinations.ROUTE_UUID_KEY
 import org.jellyfin.mobile.ui.screen.SetupScreen
 import org.jellyfin.mobile.ui.screen.home.HomeScreen
-import org.jellyfin.mobile.ui.screen.library.LibraryScreen
-import org.jellyfin.mobile.ui.screen.library.music.AlbumScreen
-import org.jellyfin.mobile.ui.screen.library.music.ArtistScreen
+import org.jellyfin.sdk.model.serializer.toUUIDOrNull
+import java.util.UUID
 
 @Composable
 fun AppContent() {
-    val serverController: ServerController by inject()
-    Crossfade(targetState = serverController.loginState) { loginState ->
+    val loginController: LoginController by inject()
+    Crossfade(targetState = loginController.loginState) { loginState ->
         when (loginState) {
             LoginState.PENDING -> Unit // do nothing
-            LoginState.NOT_LOGGED_IN -> injectContent<SetupScreen>()
+            LoginState.NOT_LOGGED_IN -> SetupScreen()
             LoginState.LOGGED_IN -> AppRouter()
         }
     }
 }
 
-val LocalBackStack = staticCompositionLocalOf<BackStack<Routing>> { throw IllegalStateException() }
-
 @Composable
 fun AppRouter() {
-    Router<Routing>("App", Routing.Home) { backStack ->
-        CompositionLocalProvider(LocalBackStack provides backStack) {
-            Crossfade(targetState = backStack.last()) { route ->
-                when (route) {
-                    is Routing.Home -> injectContent<HomeScreen>()
-                    is Routing.Library -> remember(route.info) { LibraryScreen(route.info) }.Content()
-                    is Routing.Album -> remember(route.info) { AlbumScreen(route.info) }.Content()
-                    is Routing.Artist -> remember(route.info) { ArtistScreen(route.info) }.Content()
-                }
-            }
+    val navController = rememberNavController()
+
+    NavHost(navController = navController, startDestination = ROUTE_HOME) {
+        composable(ROUTE_HOME) {
+            HomeScreen()
+        }
+        composableWithUuidArgument(ROUTE_COLLECTION) { _, uuid ->
+            //remember(route.info) { LibraryScreen(route.info) }.Content()
+        }
+        composableWithUuidArgument(ROUTE_ALBUM) { _, uuid ->
+            //remember(route.info) { AlbumScreen(route.info) }.Content()
+        }
+        composableWithUuidArgument(ROUTE_ARTIST) { _, uuid ->
+            //remember(route.info) { ArtistScreen(route.info) }.Content()
         }
     }
 }
 
-sealed class Routing {
-    object Home : Routing()
-    class Library(val info: UserViewInfo) : Routing()
-    class Album(val info: AlbumInfo) : Routing()
-    class Artist(val info: ArtistInfo) : Routing()
+fun NavGraphBuilder.composableWithUuidArgument(
+    route: String,
+    content: @Composable (backStackEntry: NavBackStackEntry, uuid: UUID) -> Unit,
+) {
+    composable(
+        route = "$route/{$ROUTE_UUID_KEY}",
+        arguments = listOf(
+            navArgument(ROUTE_UUID_KEY) { type = NavType.StringType },
+        ),
+    ) { backStackEntry ->
+        val arguments = requireNotNull(backStackEntry.arguments)
+        val uuid = requireNotNull(arguments.getString(ROUTE_UUID_KEY)?.toUUIDOrNull())
+        content(backStackEntry, uuid)
+    }
+}
+
+object AppDestinations {
+    const val ROUTE_HOME = "home"
+    const val ROUTE_COLLECTION = "collection"
+    const val ROUTE_ALBUM = "album"
+    const val ROUTE_ARTIST = "artist"
+
+    const val ROUTE_UUID_KEY = "uuid"
 }

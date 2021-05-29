@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import org.jellyfin.mobile.R
-import org.jellyfin.mobile.controller.ServerController
+import org.jellyfin.mobile.controller.LoginController
 import org.jellyfin.mobile.model.dto.UserInfo
 import org.jellyfin.mobile.ui.ChipletButton
 import org.jellyfin.mobile.ui.DefaultCornerRounding
@@ -57,7 +57,7 @@ fun UserDetailsButton(
 
 @Composable
 fun UserDetails(
-    serverController: ServerController,
+    loginController: LoginController,
     user: UserInfo,
     showUserDetails: (Boolean) -> Unit
 ) {
@@ -93,7 +93,7 @@ fun UserDetails(
                     )
                     ChipletButton(
                         text = stringResource(R.string.logout_button_text),
-                        onClick = serverController::tryLogout,
+                        onClick = loginController::tryLogout,
                     )
                 }
             }

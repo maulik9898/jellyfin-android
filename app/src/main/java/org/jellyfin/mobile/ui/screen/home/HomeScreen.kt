@@ -16,11 +16,14 @@ import androidx.compose.ui.unit.dp
 import org.jellyfin.mobile.R
 import org.jellyfin.mobile.controller.LibraryController
 import org.jellyfin.mobile.controller.LoginController
+import org.jellyfin.mobile.model.dto.UserViewInfo
 import org.jellyfin.mobile.ui.ScreenScaffold
 import org.jellyfin.mobile.ui.get
 
 @Composable
-fun HomeScreen() {
+fun HomeScreen(
+    onClickUserView: (UserViewInfo) -> Unit,
+) {
     val loginController: LoginController = get()
     val libraryController: LibraryController = get()
     val currentUser = loginController.userInfo ?: return
@@ -45,7 +48,7 @@ fun HomeScreen() {
             )
             UserViews(
                 views = libraryController.userViews,
-                onClickView = {}
+                onClickView = onClickUserView,
             )
         }
         if (userDetailsShown) {

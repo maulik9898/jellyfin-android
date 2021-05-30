@@ -4,6 +4,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
+import org.jellyfin.mobile.model.BaseItemKind
+import org.jellyfin.mobile.model.CollectionType
 import org.jellyfin.mobile.model.dto.Album
 import org.jellyfin.mobile.model.dto.Artist
 import org.jellyfin.mobile.model.dto.Song
@@ -19,7 +21,7 @@ class MusicViewModel(viewInfo: UserViewInfo) : LibraryViewModel(viewInfo) {
     val songs = mutableStateListOf<Song>()
 
     init {
-        require(viewInfo.collectionType == "Music") {
+        require(viewInfo.collectionType == CollectionType.Music) {
             "Invalid ViewModel for collection type ${viewInfo.collectionType}"
         }
 
@@ -45,7 +47,7 @@ class MusicViewModel(viewInfo: UserViewInfo) : LibraryViewModel(viewInfo) {
                 val result by itemsApi.getItems(
                     userId = apiController.requireUser(),
                     parentId = viewInfo.id,
-                    includeItemTypes = listOf("Audio"),
+                    includeItemTypes = listOf(BaseItemKind.Audio.serialName),
                     recursive = true,
                     sortBy = listOf(ItemFields.SORT_NAME.serialName),
                     startIndex = 0,

@@ -31,7 +31,11 @@ import org.jellyfin.mobile.utils.toast
 @Composable
 fun UserImage(modifier: Modifier = Modifier, user: UserInfo) {
     Surface(
-        modifier = Modifier.size(56.dp).padding(8.dp).clip(CircleShape).then(modifier),
+        modifier = Modifier
+            .size(56.dp)
+            .padding(8.dp)
+            .clip(CircleShape)
+            .then(modifier),
         color = MaterialTheme.colors.primaryVariant,
     ) {
         ApiUserImage(
@@ -69,10 +73,14 @@ fun UserDetails(
         },
     ) {
         Surface(
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
             shape = DefaultCornerRounding,
         ) {
-            Column(modifier = Modifier.padding(8.dp).fillMaxWidth()) {
+            Column(modifier = Modifier
+                .padding(8.dp)
+                .fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     UserImage(user = user)
                     Text(

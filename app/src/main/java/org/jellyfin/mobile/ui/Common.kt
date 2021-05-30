@@ -32,6 +32,7 @@ fun ScreenScaffold(
     title: String,
     titleFont: FontFamily? = null,
     canGoBack: Boolean = false,
+    onGoBack: () -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {},
     hasElevation: Boolean = true,
     content: @Composable (PaddingValues) -> Unit
@@ -45,7 +46,7 @@ fun ScreenScaffold(
                         Text(text = title, fontFamily = titleFont)
                     },
                     navigationIcon = {
-                        ToolbarBackButton()
+                        ToolbarUpButton(onClick = onGoBack)
                     },
                     actions = actions,
                     backgroundColor = MaterialTheme.colors.primary,
@@ -67,11 +68,11 @@ fun ScreenScaffold(
 }
 
 @Composable
-fun ToolbarBackButton() {
+fun ToolbarUpButton(
+    onClick: () -> Unit,
+) {
     IconButton(
-        onClick = {
-            // TODO: go back
-        },
+        onClick = onClick,
     ) {
         Icon(
             painter = painterResource(R.drawable.ic_arrow_back_white_24dp),

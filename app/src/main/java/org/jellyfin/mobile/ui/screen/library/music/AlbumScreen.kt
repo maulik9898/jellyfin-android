@@ -31,21 +31,21 @@ import androidx.compose.ui.unit.dp
 import org.jellyfin.mobile.R
 import org.jellyfin.mobile.model.dto.Album
 import org.jellyfin.mobile.ui.DefaultCornerRounding
-import org.jellyfin.mobile.ui.ToolbarBackButton
+import org.jellyfin.mobile.ui.ToolbarUpButton
 import org.jellyfin.mobile.ui.inject
 import org.jellyfin.mobile.ui.utils.ApiImage
 import org.jellyfin.mobile.utils.ImageResolver
 
 @OptIn(ExperimentalUnsignedTypes::class)
 @Composable
-fun Content(albumInfo: Album) {
+fun AlbumScreen(album: Album) {
     val onPrimaryColor = MaterialTheme.colors.onPrimary
     val backgroundColor = MaterialTheme.colors.background
     var titleColor: Color by remember { mutableStateOf(onPrimaryColor) }
     var gradientBackgroundColor: Color by remember { mutableStateOf(backgroundColor) }
     val imageResolver: ImageResolver by inject()
     LaunchedEffect(Unit) {
-        imageResolver.getImagePalette(albumInfo.id, albumInfo.primaryImageTag)?.dominantSwatch?.run {
+        imageResolver.getImagePalette(album.id, album.primaryImageTag)?.dominantSwatch?.run {
             titleColor = Color(titleTextColor)
             gradientBackgroundColor = Color(rgb)
         }
@@ -71,10 +71,10 @@ fun Content(albumInfo: Album) {
         ) {
             TopAppBar(
                 title = {
-                    Text(text = albumInfo.name)
+                    Text(text = album.name)
                 },
                 navigationIcon = {
-                    ToolbarBackButton()
+                    ToolbarUpButton(onClick = {})
                 },
                 backgroundColor = Color.Transparent,
                 contentColor = titleColor,
@@ -84,24 +84,24 @@ fun Content(albumInfo: Album) {
                 modifier = Modifier.padding(top = 56.dp, bottom = 20.dp),
             ) {
                 ApiImage(
-                    id = albumInfo.id,
+                    id = album.id,
                     modifier = Modifier
                         .size(160.dp)
                         .clip(DefaultCornerRounding),
-                    imageTag = albumInfo.primaryImageTag,
+                    imageTag = album.primaryImageTag,
                     fallback = {
                         Image(painter = painterResource(R.drawable.fallback_image_album_cover), contentDescription = null)
                     },
                 )
             }
             Text(
-                text = albumInfo.name,
+                text = album.name,
                 modifier = Modifier.padding(horizontal = 16.dp),
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.h3,
             )
             Text(
-                text = albumInfo.albumArtist,
+                text = album.albumArtist,
                 modifier = Modifier.padding(horizontal = 16.dp),
                 textAlign = TextAlign.Center,
                 overflow = TextOverflow.Ellipsis,

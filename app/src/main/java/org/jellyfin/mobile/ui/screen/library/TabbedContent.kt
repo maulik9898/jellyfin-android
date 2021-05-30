@@ -19,7 +19,6 @@ import com.google.accompanist.pager.HorizontalPager
 import com.google.accompanist.pager.rememberPagerState
 import kotlinx.coroutines.launch
 import org.jellyfin.mobile.ui.TopBarElevation
-import kotlin.math.max
 
 @Composable
 @OptIn(ExperimentalPagerApi::class)
@@ -30,11 +29,14 @@ fun TabbedContent(
 ) {
     Column {
         val coroutineScope = rememberCoroutineScope()
-        val pagerState = rememberPagerState(pageCount = max(0, tabTitles.size - 1), initialPage = 0)
+        val pagerState = rememberPagerState(pageCount = tabTitles.size, initialPage = 0)
 
         val elevationPx = with(LocalDensity.current) { TopBarElevation.toPx() }
         ScrollableTabRow(
-            modifier = Modifier.fillMaxWidth().graphicsLayer(shadowElevation = elevationPx).zIndex(TopBarElevation.value),
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer(shadowElevation = elevationPx)
+                .zIndex(TopBarElevation.value),
             selectedTabIndex = pagerState.currentPage,
             backgroundColor = MaterialTheme.colors.primary,
             divider = {},

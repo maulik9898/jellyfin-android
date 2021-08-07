@@ -123,9 +123,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
         // https://github.com/google/ExoPlayer/issues/8571
         val extractorsFactory = DefaultExtractorsFactory()
             .setTsExtractorTimestampSearchBytes(1500 * TsExtractor.TS_PACKET_SIZE)
-
+        val loadControl = CustomLoadControl.Builder().build()
         _player.value = SimpleExoPlayer.Builder(getApplication(),renderersFactory, extractorsFactory).apply {
             setTrackSelector(mediaQueueManager.trackSelector)
+            setLoadControl(loadControl)
             if (BuildConfig.DEBUG) {
                 setAnalyticsCollector(AnalyticsCollector(Clock.DEFAULT).apply {
                     addListener(mediaQueueManager.eventLogger)

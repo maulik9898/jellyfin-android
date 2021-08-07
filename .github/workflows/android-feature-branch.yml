@@ -21,8 +21,8 @@ jobs:
     - name: Split APK release types
       run: |
         mkdir -p build/jellyfin-publish
-        mv app/build/outputs/apk/*/*/jellyfin-android-*.apk build/jellyfin-publish/
-        mv app/build/outputs/apk/*/*/jellyfin-android-*.apk build/jellyfin-publish/
+        mv /home/runner/work/jellyfin-android/jellyfin-android/app/build/outputs/apk/*/*/jellyfin-android-*.apk build/jellyfin-publish/
+        mv /home/runner/work/jellyfin-android/jellyfin-android/app/build/outputs/apk/*/*/jellyfin-android-*.apk build/jellyfin-publish/
     - uses: actions/upload-artifact@v2
       with:
         name: build-artifacts

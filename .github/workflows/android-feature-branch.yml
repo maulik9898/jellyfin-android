@@ -15,15 +15,6 @@ jobs:
       with:
         java-version: '11'
         distribution: 'adopt'
-    - name: Setup Gradle cache
-      uses: actions/cache@v2.1.6
-      with:
-        path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-        restore-keys: |
-          ${{ runner.os }}-gradle-
     - name: Assemble APKs
       run: ./gradlew --no-daemon --info assemble
       

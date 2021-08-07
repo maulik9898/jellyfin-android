@@ -1,0 +1,45 @@
+name: Android Feature Branch CI
+
+on:
+  push:
+    branches:
+      - '*'
+      - '!master'
+      - '!release*'
+  
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: set up JDK 11
+      uses: actions/setup-java@v2
+      with:
+        java-version: '11'
+        distribution: 'adopt'
+    - name: Setup Gradle cache
+      uses: actions/cache@v2.1.6
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+    - name: Assemble APKs
+      run: ./gradlew --no-daemon --info assemble
+      
+    - name: Split APK release types
+      run: |
+        mkdir -p build/jellyfin-publish
+        mv app/build/outputs/apk/*/*/jellyfin-android-*.apk build/jellyfin-publish/
+        mv app/build/outputs/apk/*/*/jellyfin-android-*.apk build/jellyfin-publish/
+    - uses: actions/upload-artifact@v2
+      with:
+        name: build-artifacts
+        retention-days: 14
+        if-no-files-found: error
+        path: build/jellyfin-publish

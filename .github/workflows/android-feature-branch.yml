@@ -1,12 +1,7 @@
 name: Android Feature Branch CI
 
 on:
-  push:
-    branches:
-      - '*'
-      - '!master'
-      - '!release*'
-  
+  workflow_dispatch:
 
 jobs:
   build:

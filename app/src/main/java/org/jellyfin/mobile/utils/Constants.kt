@@ -1,6 +1,8 @@
 package org.jellyfin.mobile.utils
 
+import android.app.PendingIntent
 import android.media.session.PlaybackState
+import android.os.Build
 import android.util.Rational
 import org.jellyfin.mobile.BuildConfig
 
@@ -12,9 +14,12 @@ object Constants {
 
     // Webapp constants
     const val MINIMUM_WEB_VIEW_VERSION = 80
+    const val SHOW_PROGRESS_BAR_DELAY = 1000L
+    const val INITIAL_CONNECTION_TIMEOUT = 10000L // 10 seconds
     val MAIN_BUNDLE_PATH_REGEX = Regex(""".*/main\.[^/\s]+\.bundle\.js""")
     const val CAST_SDK_PATH = "cast_sender.js"
     const val SESSION_CAPABILITIES_PATH = "sessions/capabilities/full"
+    const val SERVICE_WORKER_PATH = "serviceworker.js"
 
     const val FRAGMENT_CONNECT_EXTRA_ERROR = "org.jellyfin.mobile.intent.extra.ERROR"
     const val FRAGMENT_WEB_VIEW_EXTRA_SERVER = "org.jellyfin.mobile.intent.extra.SERVER"
@@ -47,6 +52,10 @@ object Constants {
     const val PLAYBACK_MANAGER_COMMAND_VOL_DOWN = "volumeDown"
 
     // Notification
+    val PENDING_INTENT_FLAGS = PendingIntent.FLAG_UPDATE_CURRENT or when {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> PendingIntent.FLAG_IMMUTABLE
+        else -> 0
+    }
     const val MEDIA_NOTIFICATION_CHANNEL_ID = "org.jellyfin.mobile.media.NOW_PLAYING"
 
     // Music player constants
@@ -87,11 +96,15 @@ object Constants {
     // Video player constants
     const val LANGUAGE_UNDEFINED = "und"
     const val TICKS_PER_MILLISECOND = 10000
-    const val PLAYER_TIME_UPDATE_RATE = 1000L
+    const val PLAYER_TIME_UPDATE_RATE = 10000L
     const val DEFAULT_CONTROLS_TIMEOUT_MS = 2500
     const val GESTURE_EXCLUSION_AREA_TOP = 48
     const val DEFAULT_CENTER_OVERLAY_TIMEOUT_MS = 250
-    const val DEFAULT_SEEK_TIME_MS = 5000L
+    const val DISPLAY_PREFERENCES_ID_USER_SETTINGS = "usersettings"
+    const val DISPLAY_PREFERENCES_CLIENT_EMBY = "emby"
+    const val DISPLAY_PREFERENCES_SKIP_BACK_LENGTH = "skipBackLength"
+    const val DISPLAY_PREFERENCES_SKIP_FORWARD_LENGTH = "skipForwardLength"
+    const val DEFAULT_SEEK_TIME_MS = 10000L
     const val MAX_SKIP_TO_PREV_MS = 3000L
     const val DOUBLE_TAP_RIPPLE_DURATION_MS = 100L
     const val FULL_SWIPE_RANGE_SCREEN_RATIO = 0.66f

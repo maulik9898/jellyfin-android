@@ -20,18 +20,21 @@ import android.webkit.WebView
 import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.appcompat.app.AlertDialog
-import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.ViewCompat
 import androidx.core.view.doOnNextLayout
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.add
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.webkit.ServiceWorkerClientCompat
+import androidx.webkit.ServiceWorkerControllerCompat
 import androidx.webkit.WebResourceErrorCompat
 import androidx.webkit.WebViewAssetLoader.AssetsPathHandler
 import androidx.webkit.WebViewClientCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.launch
 import org.jellyfin.mobile.AppPreferences
 import org.jellyfin.mobile.R
@@ -78,12 +81,15 @@ class WebViewFragment : Fragment(), NativePlayerHost {
     lateinit var server: ServerEntity
         private set
     private var connected = false
+    private val timeoutRunnable = Runnable {
+        onErrorReceived()
+    }
+    private val showProgressIndicatorRunnable = Runnable {
+        webViewBinding?.progressIndicator?.isVisible = true
+    }
 
     // UI
-    private var _webViewBinding: FragmentWebviewBinding? = null
-    private val webViewBinding get() = _webViewBinding!!
-    val rootView: CoordinatorLayout get() = webViewBinding.root
-    val webView: WebView get() = webViewBinding.webView
+    private var webViewBinding: FragmentWebviewBinding? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -101,12 +107,14 @@ class WebViewFragment : Fragment(), NativePlayerHost {
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
-        _webViewBinding = FragmentWebviewBinding.inflate(inflater, container, false)
-        return webViewBinding.root
+        return FragmentWebviewBinding.inflate(inflater, container, false).also { binding ->
+            webViewBinding = binding
+        }.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        val webView = webViewBinding!!.webView
 
         // Apply window insets
         webView.applyWindowInsetsAsMargins()
@@ -115,7 +123,7 @@ class WebViewFragment : Fragment(), NativePlayerHost {
         // Setup exclusion rects for gestures
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             @Suppress("MagicNumber")
-            webView.doOnNextLayout { webView ->
+            webView.doOnNextLayout {
                 // Maximum allowed exclusion rect height is 200dp,
                 // offsetting 100dp from the center in both directions
                 // uses the maximum available space
@@ -149,15 +157,14 @@ class WebViewFragment : Fragment(), NativePlayerHost {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        _webViewBinding = null
+        webViewBinding = null
     }
 
     private fun WebView.initialize() {
         if (!appPreferences.ignoreWebViewChecks && isOutdated()) { // Check WebView version
-            showOutdatedWebViewDialog()
+            showOutdatedWebViewDialog(this)
             return
         }
-
         webViewClient = object : WebViewClientCompat() {
             override fun shouldInterceptRequest(webView: WebView, request: WebResourceRequest): WebResourceResponse? {
                 val url = request.url
@@ -205,17 +212,45 @@ class WebViewFragment : Fragment(), NativePlayerHost {
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceErrorCompat) {
                 val description = if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_RESOURCE_ERROR_GET_DESCRIPTION)) error.description else null
-                Timber.e("Received WebView error at %s: %s", request.url.toString(), description)
+                val errorCode = if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_RESOURCE_ERROR_GET_CODE)) error.errorCode else ERROR_UNKNOWN
+                Timber.e("Received WebView error %d at %s: %s", errorCode, request.url.toString(), description)
 
-                if (request.url == Uri.parse(view.url)) onErrorReceived()
+                // Abort on some specific error codes or when the request url matches the server url
+                when (errorCode) {
+                    ERROR_HOST_LOOKUP,
+                    ERROR_CONNECT,
+                    ERROR_TIMEOUT,
+                    ERROR_REDIRECT_LOOP,
+                    ERROR_UNSUPPORTED_SCHEME,
+                    ERROR_FAILED_SSL_HANDSHAKE -> onErrorReceived()
+                    else -> if (request.url == Uri.parse(view.url)) onErrorReceived()
+                }
             }
 
             override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
                 Timber.e("Received SSL error: %s", error.toString())
                 handler.cancel()
-
-                if (error.url == view.url) onErrorReceived()
+                onErrorReceived()
             }
+        }
+        // Workaround for service worker breaking script injections
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)) {
+            val swController = ServiceWorkerControllerCompat.getInstance()
+            swController.setServiceWorkerClient(object : ServiceWorkerClientCompat() {
+                override fun shouldInterceptRequest(request: WebResourceRequest): WebResourceResponse? {
+                    val path = request.url.path?.lowercase(Locale.ROOT) ?: return null
+                    return when {
+                        path.endsWith(Constants.SERVICE_WORKER_PATH) -> {
+                            WebResourceResponse("application/javascript", "utf-8", null).apply {
+                                with(HttpStatusCode.NotFound) {
+                                    setStatusCodeAndReasonPhrase(value, description)
+                                }
+                            }
+                        }
+                        else -> null
+                    }
+                }
+            })
         }
         webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
@@ -244,9 +279,11 @@ class WebViewFragment : Fragment(), NativePlayerHost {
         addJavascriptInterface(externalPlayer, "ExternalPlayer")
 
         loadUrl(server.hostname)
+        postDelayed(timeoutRunnable, Constants.INITIAL_CONNECTION_TIMEOUT)
+        postDelayed(showProgressIndicatorRunnable, Constants.SHOW_PROGRESS_BAR_DELAY)
     }
 
-    private fun showOutdatedWebViewDialog() {
+    private fun showOutdatedWebViewDialog(webView: WebView) {
         AlertDialog.Builder(requireContext()).apply {
             setTitle(R.string.dialog_web_view_outdated)
             setMessage(R.string.dialog_web_view_outdated_message)
@@ -293,9 +330,16 @@ class WebViewFragment : Fragment(), NativePlayerHost {
     }
 
     private fun onConnectedToWebapp() {
+        val webViewBinding = webViewBinding ?: return
+        val webView = webViewBinding.webView
+        webView.removeCallbacks(timeoutRunnable)
+        webView.removeCallbacks(showProgressIndicatorRunnable)
         connected = true
-        runOnUiThread { webView.fadeIn() }
-        requestNoBatteryOptimizations()
+        runOnUiThread {
+            webViewBinding.progressIndicator.isVisible = false
+            webView.fadeIn()
+        }
+        requestNoBatteryOptimizations(webViewBinding.root)
     }
 
     fun onSelectServer(error: Boolean = false) = runOnUiThread {

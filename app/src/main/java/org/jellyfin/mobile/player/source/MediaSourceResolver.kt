@@ -3,6 +3,8 @@ package org.jellyfin.mobile.player.source
 import org.jellyfin.mobile.player.PlayerException
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.exception.ApiClientException
+import org.jellyfin.sdk.api.client.extensions.itemsApi
+import org.jellyfin.sdk.api.client.extensions.mediaInfoApi
 import org.jellyfin.sdk.api.operations.ItemsApi
 import org.jellyfin.sdk.api.operations.MediaInfoApi
 import org.jellyfin.sdk.model.api.DeviceProfile
@@ -11,11 +13,10 @@ import org.jellyfin.sdk.model.serializer.toUUIDOrNull
 import timber.log.Timber
 import java.util.UUID
 
-class MediaSourceResolver(
-    private val apiClient: ApiClient,
-    private val mediaInfoApi: MediaInfoApi,
-    private val itemsApi: ItemsApi,
-) {
+class MediaSourceResolver(private val apiClient: ApiClient) {
+    private val mediaInfoApi: MediaInfoApi = apiClient.mediaInfoApi
+    private val itemsApi: ItemsApi = apiClient.itemsApi
+
     suspend fun resolveMediaSource(
         itemId: UUID,
         deviceProfile: DeviceProfile,
@@ -24,6 +25,7 @@ class MediaSourceResolver(
         subtitleStreamIndex: Int? = null,
     ): Result<JellyfinMediaSource> {
         // Load media source info
+        val playSessionId: String
         val mediaSourceInfo = try {
             val response by mediaInfoApi.getPostedPlaybackInfo(
                 itemId = itemId,
@@ -34,11 +36,14 @@ class MediaSourceResolver(
                     audioStreamIndex = audioStreamIndex,
                     subtitleStreamIndex = subtitleStreamIndex,
                     maxStreamingBitrate = /* 1 GB/s */ 1_000_000_000,
+                    autoOpenLiveStream = true,
                 ),
             )
 
-            response.mediaSources?.find { source ->
-                source.id?.toUUIDOrNull() == itemId
+            playSessionId = response.playSessionId ?: return Result.failure(PlayerException.UnsupportedContent())
+
+            response.mediaSources?.let { sources ->
+                sources.find { source -> source.id?.toUUIDOrNull() == itemId } ?: sources.firstOrNull()
             } ?: return Result.failure(PlayerException.UnsupportedContent())
         } catch (e: ApiClientException) {
             Timber.e(e, "Failed to load media source $itemId")
@@ -60,6 +65,7 @@ class MediaSourceResolver(
                 itemId = itemId,
                 item = item,
                 sourceInfo = mediaSourceInfo,
+                playSessionId = playSessionId,
                 startTimeTicks = startTimeTicks,
                 audioStreamIndex = audioStreamIndex,
                 subtitleStreamIndex = subtitleStreamIndex,

@@ -6,6 +6,7 @@ import android.view.View
 import android.widget.ImageButton
 import android.widget.PopupMenu
 import android.widget.TextView
+import androidx.annotation.StringRes
 import androidx.core.view.forEach
 import androidx.core.view.isVisible
 import org.jellyfin.mobile.R
@@ -91,40 +92,50 @@ class PlaybackMenus(
         updateSubtitlesButton()
 
         val playMethod = context.getString(R.string.playback_info_play_method, mediaSource.playMethod)
-        val videoTracksInfo = mediaSource.videoStreams.run {
-            joinToString(
-                "\n",
-                "${fragment.getString(R.string.playback_info_video_streams)}:\n",
-                limit = MAX_VIDEO_STREAMS_DISPLAY,
-                truncated = fragment.getString(R.string.playback_info_and_x_more, size - MAX_VIDEO_STREAMS_DISPLAY)
-            ) { stream ->
-                val bitrate = stream.bitRate ?: 0
-
-                @Suppress("MagicNumber")
-                val bitrateString = when {
-                    bitrate > 1_000_000 -> "%.2f Mbps".format(Locale.getDefault(), bitrate.toDouble() / 1_000_000)
-                    bitrate > 1_000 -> "%.2f Kbps".format(Locale.getDefault(), bitrate.toDouble() / 1_000)
-                    else -> "%d Kbps".format(bitrate / 1000)
+        val videoTracksInfo = buildMediaStreamsInfo(
+            mediaStreams = mediaSource.videoStreams,
+            prefix = R.string.playback_info_video_streams,
+            maxStreams = MAX_VIDEO_STREAMS_DISPLAY,
+            streamSuffix = { stream ->
+                val bitrate = stream.bitRate
+                when {
+                    bitrate == null -> ""
+                    bitrate > BITRATE_MEGA_BIT -> " (%.2f Mbps)".format(Locale.getDefault(), bitrate.toDouble() / BITRATE_MEGA_BIT)
+                    bitrate > BITRATE_KILO_BIT -> " (%.2f Kbps)".format(Locale.getDefault(), bitrate.toDouble() / BITRATE_KILO_BIT)
+                    else -> " (%d bps)".format(bitrate)
                 }
-                "- ${stream.displayTitle} ($bitrateString)"
-            }
-        }
-        val audioTracksInfo = mediaSource.audioStreams.run {
-            joinToString(
-                "\n",
-                "${fragment.getString(R.string.playback_info_audio_streams)}:\n",
-                limit = MAX_AUDIO_STREAMS_DISPLAY,
-                truncated = fragment.getString(R.string.playback_info_and_x_more, size - MAX_AUDIO_STREAMS_DISPLAY)
-            ) { stream ->
-                val languageString = stream.language?.let { lang -> " ($lang)" }.orEmpty()
-                "- ${stream.displayTitle}$languageString"
-            }
-        }
+            },
+        )
+        val audioTracksInfo = buildMediaStreamsInfo(
+            mediaStreams = mediaSource.audioStreams,
+            prefix = R.string.playback_info_audio_streams,
+            maxStreams = MAX_AUDIO_STREAMS_DISPLAY,
+            streamSuffix = { stream ->
+                stream.language?.let { lang -> " ($lang)" }.orEmpty()
+            },
+        )
+
         playbackInfo.text = listOf(
             playMethod,
             videoTracksInfo,
             audioTracksInfo,
         ).joinToString("\n\n")
+    }
+
+    private fun buildMediaStreamsInfo(
+        mediaStreams: List<MediaStream>,
+        @StringRes prefix: Int,
+        maxStreams: Int,
+        streamSuffix: (MediaStream) -> String,
+    ): String = mediaStreams.joinToString(
+        "\n",
+        "${fragment.getString(prefix)}:\n",
+        limit = maxStreams,
+        truncated = fragment.getString(R.string.playback_info_and_x_more, mediaStreams.size - maxStreams)
+    ) { stream ->
+        val title = stream.displayTitle?.takeUnless(String::isEmpty) ?: fragment.getString(R.string.playback_info_stream_unknown_title)
+        val suffix = streamSuffix(stream)
+        "- $title$suffix"
     }
 
     private fun createSubtitlesMenu() = PopupMenu(context, subtitlesButton).apply {
@@ -215,6 +226,9 @@ class PlaybackMenus(
 
         private const val MAX_VIDEO_STREAMS_DISPLAY = 3
         private const val MAX_AUDIO_STREAMS_DISPLAY = 5
+
+        private const val BITRATE_MEGA_BIT = 1_000_000
+        private const val BITRATE_KILO_BIT = 1_000
 
         private const val SPEED_MENU_STEP_SIZE = 0.25f
         private const val SPEED_MENU_STEP_MIN = 2 // → 0.5x

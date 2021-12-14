@@ -3,13 +3,13 @@ import com.github.benmanes.gradle.versions.updates.gradle.GradleReleaseChannel
 import io.gitlab.arturbosch.detekt.Detekt
 
 plugins {
-    id("com.android.application")
-    kotlin("android")
-    kotlin("kapt")
-    id("kotlin-parcelize")
-    id(Plugins.detekt) version Plugins.Versions.detekt
-    id(Plugins.androidJunit5)
-    id(Plugins.dependencyUpdates) version Plugins.Versions.dependencyUpdates
+    alias(libs.plugins.android.app)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.ksp)
+    alias(libs.plugins.kotlin.parcelize)
+    alias(libs.plugins.detekt)
+    alias(libs.plugins.android.junit5)
+    alias(libs.plugins.dependencyupdates)
 }
 
 detekt {
@@ -27,21 +27,16 @@ detekt {
 }
 
 android {
-    compileSdk = 30
+    compileSdk = 31
+
     defaultConfig {
         applicationId = "org.jellyfin.mobile"
         minSdk = 21
-        targetSdk = 30
+        targetSdk = 31
         versionName = project.getVersionName()
         versionCode = getVersionCode(versionName!!)
         setProperty("archivesBaseName", "jellyfin-android-v$versionName")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        javaCompileOptions {
-            annotationProcessorOptions {
-                arguments["room.schemaLocation"] = "$projectDir/schemas"
-                arguments["room.incremental"] = "true"
-            }
-        }
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -101,6 +96,10 @@ android {
     }
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+    arg("room.incremental", "true")
+}
 
 dependencies {
     val proprietaryImplementation by configurations
@@ -142,6 +141,7 @@ dependencies {
     implementation(libs.androidx.media)
     implementation(libs.androidx.mediarouter)
     implementation(libs.bundles.exoplayer)
+    implementation(libs.jellyfin.exoplayer.ffmpegextension)
     @Suppress("UnstableApiUsage")
     proprietaryImplementation(libs.exoplayer.cast)
     @Suppress("UnstableApiUsage")
@@ -149,7 +149,7 @@ dependencies {
 
     // Room
     implementation(libs.bundles.androidx.room)
-    kapt(libs.androidx.room.compiler)
+    ksp(libs.androidx.room.compiler)
 
     // Monitoring
     implementation(libs.timber)

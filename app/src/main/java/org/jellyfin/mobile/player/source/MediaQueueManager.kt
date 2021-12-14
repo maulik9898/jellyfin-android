@@ -13,13 +13,16 @@ import com.google.android.exoplayer2.source.ProgressiveMediaSource
 import com.google.android.exoplayer2.source.SingleSampleMediaSource
 import com.google.android.exoplayer2.source.hls.HlsMediaSource
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector
-import com.google.android.exoplayer2.util.EventLogger
 import org.jellyfin.mobile.bridge.PlayOptions
 import org.jellyfin.mobile.player.PlayerException
 import org.jellyfin.mobile.player.PlayerViewModel
+import org.jellyfin.mobile.utils.clearSelectionAndDisableRendererByType
+import org.jellyfin.mobile.utils.selectTrackByTypeAndGroup
 import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.api.client.extensions.videosApi
 import org.jellyfin.sdk.api.operations.VideosApi
 import org.jellyfin.sdk.model.api.DeviceProfile
+import org.jellyfin.sdk.model.api.MediaProtocol
 import org.jellyfin.sdk.model.api.MediaStream
 import org.jellyfin.sdk.model.api.PlayMethod
 import org.koin.core.component.KoinComponent
@@ -30,17 +33,15 @@ import java.util.UUID
 class MediaQueueManager(
     private val viewModel: PlayerViewModel,
 ) : KoinComponent {
-    private val apiClient: ApiClient by inject()
+    private val apiClient: ApiClient = get()
     private val mediaSourceResolver: MediaSourceResolver by inject()
     private val deviceProfile: DeviceProfile by inject()
-    private val videosApi: VideosApi by inject()
+    private val videosApi: VideosApi = apiClient.videosApi
+    val trackSelector = DefaultTrackSelector(viewModel.getApplication<Application>())
     private val _mediaQueue: MutableLiveData<QueueItem.Loaded> = MutableLiveData()
     val mediaQueue: LiveData<QueueItem.Loaded> get() = _mediaQueue
 
     private var currentPlayOptions: PlayOptions? = null
-
-    val trackSelector = DefaultTrackSelector(viewModel.getApplication<Application>())
-    val eventLogger = EventLogger(trackSelector)
 
     /**
      * Handle initial playback options from fragment.
@@ -67,6 +68,10 @@ class MediaQueueManager(
             }
         }
         return null
+    }
+
+    fun tryRestartPlayback() {
+        _mediaQueue.value?.play()
     }
 
     @CheckResult
@@ -135,40 +140,58 @@ class MediaQueueManager(
     @CheckResult
     private fun createVideoMediaSource(source: JellyfinMediaSource): MediaSource {
         val sourceInfo = source.sourceInfo
-        val builder = MediaItem.Builder().setMediaId(source.itemId.toString())
-        return when (source.playMethod) {
+        val (url, factory) = when (source.playMethod) {
             PlayMethod.DIRECT_PLAY -> {
-                val url = videosApi.getVideoStreamUrl(
-                    itemId = source.itemId,
-                    static = true,
-                    mediaSourceId = source.id,
-                )
+                when (sourceInfo.protocol) {
+                    MediaProtocol.FILE -> {
+                        val url = videosApi.getVideoStreamUrl(
+                            itemId = source.itemId,
+                            static = true,
+                            playSessionId = source.playSessionId,
+                            mediaSourceId = source.id,
+                            deviceId = apiClient.deviceInfo.id,
+                        )
 
-                val mediaItem = builder.setUri(url).build()
-                get<ProgressiveMediaSource.Factory>().createMediaSource(mediaItem)
+                        url to get<ProgressiveMediaSource.Factory>()
+                    }
+                    MediaProtocol.HTTP -> {
+                        val url = requireNotNull(sourceInfo.path)
+                        val factory = get<HlsMediaSource.Factory>().setAllowChunklessPreparation(true)
+
+                        url to factory
+                    }
+                    else -> throw IllegalArgumentException("Unsupported protocol ${sourceInfo.protocol}")
+                }
             }
             PlayMethod.DIRECT_STREAM -> {
                 val container = requireNotNull(sourceInfo.container) { "Missing direct stream container" }
                 val url = videosApi.getVideoStreamByContainerUrl(
                     itemId = source.itemId,
                     container = container,
+                    playSessionId = source.playSessionId,
                     mediaSourceId = source.id,
+                    deviceId = apiClient.deviceInfo.id,
                 )
 
-                val mediaItem = builder.setUri(url).build()
-                get<ProgressiveMediaSource.Factory>().createMediaSource(mediaItem)
+                url to get<ProgressiveMediaSource.Factory>()
             }
             PlayMethod.TRANSCODE -> {
                 val transcodingPath = requireNotNull(sourceInfo.transcodingUrl) { "Missing transcode URL" }
                 val protocol = sourceInfo.transcodingSubProtocol
                 require(protocol == "hls") { "Unsupported transcode protocol '$protocol'" }
                 val transcodingUrl = apiClient.createUrl(transcodingPath)
-                val mediaItem = builder.setUri(transcodingUrl).build()
-                get<HlsMediaSource.Factory>()
-                    .setAllowChunklessPreparation(true)
-                    .createMediaSource(mediaItem)
+                val factory = get<HlsMediaSource.Factory>().setAllowChunklessPreparation(true)
+
+                transcodingUrl to factory
             }
         }
+
+        val mediaItem = MediaItem.Builder()
+            .setMediaId(source.itemId.toString())
+            .setUri(url)
+            .build()
+
+        return factory.createMediaSource(mediaItem)
     }
 
     /**
@@ -184,7 +207,12 @@ class MediaQueueManager(
         val factory = get<SingleSampleMediaSource.Factory>()
         return source.getExternalSubtitleStreams().map { stream ->
             val uri = Uri.parse(apiClient.createUrl(stream.deliveryUrl))
-            val mediaItem = MediaItem.Subtitle(uri, stream.mimeType, stream.language, C.SELECTION_FLAG_AUTOSELECT)
+            val mediaItem = MediaItem.SubtitleConfiguration.Builder(uri).apply {
+                setLabel(stream.displayTitle)
+                setMimeType(stream.mimeType)
+                setLanguage(stream.language)
+                setSelectionFlags(C.SELECTION_FLAG_AUTOSELECT)
+            }.build()
             factory.setTrackId(stream.index.toString()).createMediaSource(mediaItem, source.runTimeMs)
         }.toTypedArray()
     }
@@ -192,19 +220,26 @@ class MediaQueueManager(
     fun selectInitialTracks() {
         val queueItem = _mediaQueue.value ?: return
         val mediaSource = queueItem.jellyfinMediaSource
-        selectAudioTrack(mediaSource.selectedAudioStream?.index ?: -1, true)
-        selectSubtitle(mediaSource.selectedSubtitleStream?.index ?: -1, true)
+        selectAudioTrack(mediaSource.selectedAudioStream?.index ?: -1, initial = true)
+        selectSubtitle(mediaSource.selectedSubtitleStream?.index ?: -1, initial = true)
     }
 
     /**
      * Select an audio track in the media source and apply changes to the current player.
      *
      * @param streamIndex the [MediaStream.index] that should be selected
-     * @param initial whether this is an initial selection and checks for re-selection should be skipped.
      * @return true if the audio track was changed
      */
+    fun selectAudioTrack(streamIndex: Int): Boolean {
+        return selectAudioTrack(streamIndex, initial = false)
+    }
+
+    /**
+     * @param initial whether this is an initial selection and checks for re-selection should be skipped.
+     * @see selectAudioTrack
+     */
     @Suppress("ReturnCount")
-    fun selectAudioTrack(streamIndex: Int, initial: Boolean = false): Boolean {
+    private fun selectAudioTrack(streamIndex: Int, initial: Boolean): Boolean {
         val mediaSource = _mediaQueue.value?.jellyfinMediaSource ?: return false
         val sourceIndex = mediaSource.audioStreams.binarySearchBy(streamIndex, selector = MediaStream::index)
 
@@ -220,32 +255,24 @@ class MediaQueueManager(
             !mediaSource.selectAudioStream(sourceIndex) -> return false
         }
 
-        // Handle selection in player
-        val parameters = trackSelector.buildUponParameters()
-        val rendererIndex = viewModel.getPlayerRendererIndex(C.TRACK_TYPE_AUDIO)
-        val trackInfo = trackSelector.currentMappedTrackInfo
-        return if (rendererIndex >= 0 && trackInfo != null) {
-            val trackGroups = trackInfo.getTrackGroups(rendererIndex)
-            if (sourceIndex in 0 until trackGroups.length) {
-                val selection = DefaultTrackSelector.SelectionOverride(sourceIndex, 0)
-                parameters.setSelectionOverride(rendererIndex, trackGroups, selection)
-            } else {
-                parameters.clearSelectionOverride(rendererIndex, trackGroups)
-            }
-            parameters.setRendererDisabled(rendererIndex, false)
-            trackSelector.setParameters(parameters)
-            true
-        } else false
+        return trackSelector.selectTrackByTypeAndGroup(C.TRACK_TYPE_AUDIO, sourceIndex)
     }
 
     /**
      * Select a subtitle track in the media source and apply changes to the current player.
      *
      * @param streamIndex the [MediaStream.index] that should be selected
-     * @param initial whether this is an initial selection and checks for re-selection should be skipped.
      * @return true if the subtitle was changed
      */
-    fun selectSubtitle(streamIndex: Int, initial: Boolean = false): Boolean {
+    fun selectSubtitle(streamIndex: Int): Boolean {
+        return selectSubtitle(streamIndex, initial = false)
+    }
+
+    /**
+     * @param initial whether this is an initial selection and checks for re-selection should be skipped.
+     * @see selectSubtitle
+     */
+    private fun selectSubtitle(streamIndex: Int, initial: Boolean): Boolean {
         val mediaSource = _mediaQueue.value?.jellyfinMediaSource ?: return false
         val sourceIndex = mediaSource.subtitleStreams.binarySearchBy(streamIndex, selector = MediaStream::index)
 
@@ -256,24 +283,12 @@ class MediaQueueManager(
             !mediaSource.selectSubtitleStream(sourceIndex) -> return false
         }
 
-        // Handle selection in player
-        val rendererIndex = viewModel.getPlayerRendererIndex(C.TRACK_TYPE_TEXT)
-        val trackInfo = trackSelector.currentMappedTrackInfo
-        return if (rendererIndex >= 0 && trackInfo != null) {
-            val parameters = trackSelector.buildUponParameters()
-            val trackGroups = trackInfo.getTrackGroups(rendererIndex)
-            if (sourceIndex in 0 until trackGroups.length) {
-                val selection = DefaultTrackSelector.SelectionOverride(sourceIndex, 0)
-                parameters.setSelectionOverride(rendererIndex, trackGroups, selection)
-                parameters.setRendererDisabled(rendererIndex, false)
-            } else {
-                // No subtitle selected, clear selection overrides and disable renderer
-                parameters.clearSelectionOverride(rendererIndex, trackGroups)
-                parameters.setRendererDisabled(rendererIndex, true)
-            }
-            trackSelector.setParameters(parameters)
-            true
-        } else false
+        return when {
+            // Select new subtitle with suitable renderer
+            sourceIndex >= 0 -> trackSelector.selectTrackByTypeAndGroup(C.TRACK_TYPE_TEXT, sourceIndex)
+            // No subtitle selected, clear selection overrides and disable all subtitle renderers
+            else -> trackSelector.clearSelectionAndDisableRendererByType(C.TRACK_TYPE_TEXT)
+        }
     }
 
     /**

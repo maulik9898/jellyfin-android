@@ -15,7 +15,7 @@
     <string name="pref_music_notification_always_dismissible_title">Umožniť odstránenie upozornení prehrávača</string>
     <string name="pref_category_music_player">Prehrávač hudby</string>
     <string name="activity_name_settings">Nastavenia Jellyfinu</string>
-    <string name="menu_item_none">Žiadny</string>
+    <string name="menu_item_none">Žiadne</string>
     <string name="playback_info_and_x_more">…a %d ďalších</string>
     <string name="playback_info_audio_streams">Zvukové streamy</string>
     <string name="playback_info_video_streams">Video streamy</string>
@@ -94,4 +94,6 @@
     <string name="dialog_button_ignore">Ignorovať</string>
     <string name="dialog_button_open_settings">Otvoriť nastavenia</string>
     <string name="pref_exoplayer_remember_brightness">Zapamätať si úroveň jasu displeja</string>
+    <string name="video_player_integrated">Integrovaný prehrávač</string>
+    <string name="playback_info_stream_unknown_title">Neznámy názov</string>
 </resources>

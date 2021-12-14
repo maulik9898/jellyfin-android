@@ -27,9 +27,12 @@ import org.jellyfin.mobile.R
 import org.jellyfin.mobile.utils.Constants
 import org.jellyfin.mobile.utils.Constants.VIDEO_PLAYER_NOTIFICATION_ID
 import org.jellyfin.mobile.utils.createMediaNotificationChannel
+import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.api.client.extensions.imageApi
 import org.jellyfin.sdk.api.operations.ImageApi
 import org.jellyfin.sdk.model.api.ImageType
 import org.koin.core.component.KoinComponent
+import org.koin.core.component.get
 import org.koin.core.component.inject
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -37,7 +40,7 @@ class PlayerNotificationHelper(private val viewModel: PlayerViewModel) : KoinCom
     private val context: Context = viewModel.getApplication<Application>()
     private val appPreferences: AppPreferences by inject()
     private val notificationManager: NotificationManager? by lazy { context.getSystemService() }
-    private val imageApi: ImageApi by inject()
+    private val imageApi: ImageApi = get<ApiClient>().imageApi
     private val imageLoader: ImageLoader by inject()
     private val receiverRegistered = AtomicBoolean(false)
 
@@ -132,7 +135,7 @@ class PlayerNotificationHelper(private val viewModel: PlayerViewModel) : KoinCom
         val intent = Intent(intentAction).apply {
             `package` = BuildConfig.APPLICATION_ID
         }
-        val pendingIntent = PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT)
+        val pendingIntent = PendingIntent.getBroadcast(context, 0, intent, Constants.PENDING_INTENT_FLAGS)
         @Suppress("DEPRECATION")
         return Notification.Action.Builder(icon, context.getString(title), pendingIntent).build()
     }
@@ -141,14 +144,14 @@ class PlayerNotificationHelper(private val viewModel: PlayerViewModel) : KoinCom
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
         }
-        return PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT)
+        return PendingIntent.getActivity(context, 0, intent, Constants.PENDING_INTENT_FLAGS)
     }
 
     private fun buildDeleteIntent(): PendingIntent {
         val intent = Intent(Constants.ACTION_PAUSE).apply {
             `package` = BuildConfig.APPLICATION_ID
         }
-        return PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT)
+        return PendingIntent.getBroadcast(context, 0, intent, Constants.PENDING_INTENT_FLAGS)
     }
 
     private val notificationActionReceiver: BroadcastReceiver = object : BroadcastReceiver() {

@@ -239,22 +239,22 @@ class PlayerFragment : Fragment() {
     fun isLandscape(configuration: Configuration = resources.configuration) =
         configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-    fun onSeek(offsetMs: Long) {
-        viewModel.seekToOffset(offsetMs)
-    }
+    fun onRewind() = viewModel.rewind()
+
+    fun onFastForward() = viewModel.fastForward()
 
     /**
      * @return true if the audio track was changed
      */
     fun onAudioTrackSelected(index: Int): Boolean {
-        return viewModel.mediaQueueManager.selectAudioTrack(index)
+        return viewModel.selectAudioTrack(index)
     }
 
     /**
      * @return true if the subtitle was changed
      */
     fun onSubtitleSelected(index: Int): Boolean {
-        return viewModel.mediaQueueManager.selectSubtitle(index)
+        return viewModel.selectSubtitle(index)
     }
 
     /**

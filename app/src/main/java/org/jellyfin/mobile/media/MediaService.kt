@@ -22,13 +22,13 @@ import androidx.mediarouter.media.MediaRouteSelector
 import androidx.mediarouter.media.MediaRouter
 import androidx.mediarouter.media.MediaRouterParams
 import com.google.android.exoplayer2.C
-import com.google.android.exoplayer2.ControlDispatcher
-import com.google.android.exoplayer2.ExoPlaybackException
+import com.google.android.exoplayer2.ExoPlayer
+import com.google.android.exoplayer2.PlaybackException
 import com.google.android.exoplayer2.Player
-import com.google.android.exoplayer2.SimpleExoPlayer
 import com.google.android.exoplayer2.audio.AudioAttributes
 import com.google.android.exoplayer2.ext.mediasession.MediaSessionConnector
 import com.google.android.exoplayer2.ext.mediasession.TimelineQueueNavigator
+import com.google.android.exoplayer2.source.MediaSourceFactory
 import com.google.android.exoplayer2.ui.PlayerNotificationManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,9 +41,11 @@ import org.jellyfin.mobile.cast.ICastPlayerProvider
 import org.jellyfin.mobile.controller.ApiController
 import org.jellyfin.mobile.media.car.LibraryBrowser
 import org.jellyfin.mobile.media.car.LibraryPage
+import org.jellyfin.mobile.utils.Constants
 import org.jellyfin.mobile.utils.toast
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.exception.ApiClientException
+import org.koin.android.ext.android.get
 import org.koin.android.ext.android.inject
 import timber.log.Timber
 import com.google.android.exoplayer2.MediaItem as ExoPlayerMediaItem
@@ -80,8 +82,8 @@ class MediaService : MediaBrowserServiceCompat() {
     @Suppress("MemberVisibilityCanBePrivate")
     val playerListener: Player.Listener = PlayerEventListener()
 
-    private val exoPlayer: SimpleExoPlayer by lazy {
-        SimpleExoPlayer.Builder(this).build().apply {
+    private val exoPlayer: Player by lazy {
+        ExoPlayer.Builder(this, get<MediaSourceFactory>()).build().apply {
             setAudioAttributes(playerAudioAttributes, true)
             setHandleAudioBecomingNoisy(true)
             addListener(playerListener)
@@ -100,7 +102,7 @@ class MediaService : MediaBrowserServiceCompat() {
         }
 
         val sessionActivityPendingIntent = packageManager?.getLaunchIntentForPackage(packageName)?.let { sessionIntent ->
-            PendingIntent.getActivity(this, 0, sessionIntent, 0)
+            PendingIntent.getActivity(this, 0, sessionIntent, Constants.PENDING_INTENT_FLAGS)
         }
 
         mediaSession = MediaSessionCompat(this, "MediaService").apply {
@@ -245,7 +247,7 @@ class MediaService : MediaBrowserServiceCompat() {
             } else if (playbackState != Player.STATE_IDLE && playbackState != Player.STATE_ENDED) {
                 preparePlaylist(
                     metadataList = currentPlaylistItems,
-                    initialPlaybackIndex = previousPlayer.currentWindowIndex,
+                    initialPlaybackIndex = previousPlayer.currentMediaItemIndex,
                     playWhenReady = previousPlayer.playWhenReady,
                     playbackStartPositionMs = previousPlayer.currentPosition
                 )
@@ -338,10 +340,9 @@ class MediaService : MediaBrowserServiceCompat() {
 
         override fun onCommand(
             player: Player,
-            controlDispatcher: ControlDispatcher,
             command: String,
             extras: Bundle?,
-            cb: ResultReceiver?
+            cb: ResultReceiver?,
         ): Boolean = false
     }
 
@@ -392,18 +393,8 @@ class MediaService : MediaBrowserServiceCompat() {
             }
         }
 
-        override fun onPlayerError(error: ExoPlaybackException) {
-            var message = R.string.media_service_generic_error
-            when (error.type) {
-                ExoPlaybackException.TYPE_SOURCE -> {
-                    message = R.string.media_service_item_not_found
-                    Timber.e("TYPE_SOURCE: %s", error.sourceException.message)
-                }
-                ExoPlaybackException.TYPE_RENDERER -> Timber.e("TYPE_RENDERER: %s", error.rendererException.message)
-                ExoPlaybackException.TYPE_UNEXPECTED -> Timber.e("TYPE_UNEXPECTED: %s", error.unexpectedException.message)
-                ExoPlaybackException.TYPE_REMOTE -> Timber.e("TYPE_REMOTE: %s", error.message)
-            }
-            applicationContext.toast(message, Toast.LENGTH_LONG)
+        override fun onPlayerError(error: PlaybackException) {
+            toast("${getString(R.string.media_service_generic_error)}: ${error.errorCodeName}", Toast.LENGTH_LONG)
         }
     }
 

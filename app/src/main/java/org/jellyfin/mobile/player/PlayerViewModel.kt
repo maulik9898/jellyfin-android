@@ -13,11 +13,14 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import com.google.android.exoplayer2.C
+import com.google.android.exoplayer2.DefaultRenderersFactory
 import com.google.android.exoplayer2.ExoPlayer
+import com.google.android.exoplayer2.PlaybackException
 import com.google.android.exoplayer2.Player
-import com.google.android.exoplayer2.SimpleExoPlayer
 import com.google.android.exoplayer2.analytics.AnalyticsCollector
+import com.google.android.exoplayer2.mediacodec.MediaCodecDecoderException
 import com.google.android.exoplayer2.util.Clock
+import com.google.android.exoplayer2.util.EventLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,33 +29,46 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jellyfin.mobile.BuildConfig
 import org.jellyfin.mobile.PLAYER_EVENT_CHANNEL
+import org.jellyfin.mobile.model.DisplayPreferences
 import org.jellyfin.mobile.player.source.JellyfinMediaSource
 import org.jellyfin.mobile.player.source.MediaQueueManager
 import org.jellyfin.mobile.utils.Constants
 import org.jellyfin.mobile.utils.Constants.SUPPORTED_VIDEO_PLAYER_PLAYBACK_ACTIONS
 import org.jellyfin.mobile.utils.applyDefaultAudioAttributes
 import org.jellyfin.mobile.utils.applyDefaultLocalAudioAttributes
-import org.jellyfin.mobile.utils.getRendererIndexByType
 import org.jellyfin.mobile.utils.getVolumeLevelPercent
 import org.jellyfin.mobile.utils.getVolumeRange
+import org.jellyfin.mobile.utils.logTracks
 import org.jellyfin.mobile.utils.scaleInRange
 import org.jellyfin.mobile.utils.seekToOffset
 import org.jellyfin.mobile.utils.setPlaybackState
 import org.jellyfin.mobile.utils.toMediaMetadata
 import org.jellyfin.mobile.utils.width
+import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.exception.ApiClientException
+import org.jellyfin.sdk.api.client.extensions.displayPreferencesApi
+import org.jellyfin.sdk.api.client.extensions.hlsSegmentApi
+import org.jellyfin.sdk.api.client.extensions.playStateApi
+import org.jellyfin.sdk.api.operations.DisplayPreferencesApi
+import org.jellyfin.sdk.api.operations.HlsSegmentApi
 import org.jellyfin.sdk.api.operations.PlayStateApi
+import org.jellyfin.sdk.model.api.PlayMethod
 import org.jellyfin.sdk.model.api.PlaybackProgressInfo
 import org.jellyfin.sdk.model.api.PlaybackStartInfo
 import org.jellyfin.sdk.model.api.PlaybackStopInfo
 import org.jellyfin.sdk.model.api.RepeatMode
 import org.koin.core.component.KoinComponent
+import org.koin.core.component.get
 import org.koin.core.component.inject
 import org.koin.core.qualifier.named
 import timber.log.Timber
+import java.util.concurrent.atomic.AtomicBoolean
 
 class PlayerViewModel(application: Application) : AndroidViewModel(application), KoinComponent, Player.Listener {
-    private val playStateApi by inject<PlayStateApi>()
+    private val apiClient: ApiClient = get()
+    private val displayPreferencesApi: DisplayPreferencesApi = apiClient.displayPreferencesApi
+    private val playStateApi: PlayStateApi = apiClient.playStateApi
+    private val hlsSegmentApi: HlsSegmentApi = apiClient.hlsSegmentApi
 
     private val lifecycleObserver = PlayerLifecycleObserver(this)
     private val audioManager: AudioManager by lazy { getApplication<Application>().getSystemService()!! }
@@ -68,6 +84,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
     private val _playerState = MutableLiveData<Int>()
     val player: LiveData<ExoPlayer?> get() = _player
     val playerState: LiveData<Int> get() = _playerState
+    private val eventLogger = EventLogger(mediaQueueManager.trackSelector)
+    private val analyticsCollector = AnalyticsCollector(Clock.DEFAULT).apply {
+        addListener(eventLogger)
+    }
+    private val initialTracksSelected = AtomicBoolean(false)
+    private var fallbackPreferExtensionRenderers = false
 
     private var progressUpdateJob: Job? = null
 
@@ -88,8 +110,34 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
     }
     private val mediaSessionCallback = PlayerMediaSessionCallback(this)
 
+    private var displayPreferences = DisplayPreferences()
+
     init {
         ProcessLifecycleOwner.get().lifecycle.addObserver(lifecycleObserver)
+
+        // Load display preferences
+        viewModelScope.launch {
+            try {
+                val displayPreferencesDto by displayPreferencesApi.getDisplayPreferences(
+                    displayPreferencesId = Constants.DISPLAY_PREFERENCES_ID_USER_SETTINGS,
+                    client = Constants.DISPLAY_PREFERENCES_CLIENT_EMBY,
+                )
+
+                val customPrefs = displayPreferencesDto.customPrefs
+
+                displayPreferences = DisplayPreferences(
+                    skipBackLength = customPrefs?.get(Constants.DISPLAY_PREFERENCES_SKIP_BACK_LENGTH)?.toLongOrNull()
+                        ?: Constants.DEFAULT_SEEK_TIME_MS,
+                    skipForwardLength = customPrefs?.get(Constants.DISPLAY_PREFERENCES_SKIP_FORWARD_LENGTH)?.toLongOrNull()
+                        ?: Constants.DEFAULT_SEEK_TIME_MS
+                )
+            } catch (e: ApiClientException) {
+                Timber.e(e, "Failed to load display preferences")
+            } catch (e: IllegalArgumentException /* kotlinx.serialization.SerializationException */) {
+                // TODO: Remove catch branch when SDK is updated to >=10.8 based API
+                Timber.e(e, "Failed to load display preferences")
+            }
+        }
 
         // Subscribe to player events from webapp
         viewModelScope.launch {
@@ -109,16 +157,20 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
     }
 
     /**
-     * Setup a new [SimpleExoPlayer] for video playback, register callbacks and set attributes
+     * Setup a new [ExoPlayer] for video playback, register callbacks and set attributes
      */
     fun setupPlayer() {
-        _player.value = SimpleExoPlayer.Builder(getApplication()).apply {
-            setTrackSelector(mediaQueueManager.trackSelector)
-            if (BuildConfig.DEBUG) {
-                setAnalyticsCollector(AnalyticsCollector(Clock.DEFAULT).apply {
-                    addListener(mediaQueueManager.eventLogger)
-                })
+        val renderersFactory = DefaultRenderersFactory(getApplication()).apply {
+            setEnableDecoderFallback(true) // Fallback only works if initialization fails, not decoding at playback time
+            val rendererMode = when {
+                fallbackPreferExtensionRenderers -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
+                else -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
             }
+            setExtensionRendererMode(rendererMode)
+        }
+        _player.value = ExoPlayer.Builder(getApplication(), renderersFactory, get()).apply {
+            setTrackSelector(mediaQueueManager.trackSelector)
+            setAnalyticsCollector(analyticsCollector)
         }.build().apply {
             addListener(this@PlayerViewModel)
             applyDefaultAudioAttributes(C.CONTENT_TYPE_MOVIE)
@@ -141,13 +193,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
 
     fun play(queueItem: MediaQueueManager.QueueItem.Loaded) {
         val player = playerOrNull ?: return
+
         player.setMediaSource(queueItem.exoMediaSource)
         player.prepare()
+
+        initialTracksSelected.set(false)
+
         val startTime = queueItem.jellyfinMediaSource.startTimeMs
-        if (startTime > 0) {
-            player.seekTo(startTime)
-        }
+        if (startTime > 0) player.seekTo(startTime)
         player.playWhenReady = true
+
         mediaSession.setMetadata(queueItem.jellyfinMediaSource.toMediaMetadata())
 
         viewModelScope.launch {
@@ -174,6 +229,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
                 PlaybackStartInfo(
                     itemId = mediaSource.itemId,
                     playMethod = mediaSource.playMethod,
+                    playSessionId = mediaSource.playSessionId,
                     audioStreamIndex = mediaSource.selectedAudioStream?.index,
                     subtitleStreamIndex = mediaSource.selectedSubtitleStream?.index,
                     isPaused = !isPlaying,
@@ -201,6 +257,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
                     PlaybackProgressInfo(
                         itemId = mediaSource.itemId,
                         playMethod = mediaSource.playMethod,
+                        playSessionId = mediaSource.playSessionId,
                         audioStreamIndex = mediaSource.selectedAudioStream?.index,
                         subtitleStreamIndex = mediaSource.selectedSubtitleStream?.index,
                         isPaused = !isPlaying,
@@ -234,6 +291,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
                     PlaybackStopInfo(
                         itemId = mediaSource.itemId,
                         positionTicks = lastPositionTicks,
+                        playSessionId = mediaSource.playSessionId,
                         failed = false,
                     )
                 )
@@ -241,6 +299,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
                 // Mark video as watched if playback finished
                 if (hasFinished) {
                     playStateApi.markPlayedItem(itemId = mediaSource.itemId)
+                }
+
+                // Stop active encoding if transcoding
+                if (mediaSource.playMethod == PlayMethod.TRANSCODE) {
+                    hlsSegmentApi.stopEncodingProcess(
+                        deviceId = apiClient.deviceInfo.id,
+                        playSessionId = mediaSource.playSessionId
+                    )
                 }
             } catch (e: ApiClientException) {
                 Timber.e(e, "Failed to report playback stop")
@@ -258,16 +324,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
         playerOrNull?.playWhenReady = false
     }
 
-    fun seekToOffset(offsetMs: Long) {
-        playerOrNull?.seekToOffset(offsetMs)
-    }
-
     fun rewind() {
-        seekToOffset(Constants.DEFAULT_SEEK_TIME_MS.unaryMinus())
+        playerOrNull?.seekToOffset(displayPreferences.skipBackLength.unaryMinus())
     }
 
     fun fastForward() {
-        seekToOffset(Constants.DEFAULT_SEEK_TIME_MS)
+        playerOrNull?.seekToOffset(displayPreferences.skipForwardLength)
     }
 
     fun skipToPrevious(force: Boolean = false) {
@@ -293,6 +355,20 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
         viewModelScope.launch {
             mediaQueueManager.next()
         }
+    }
+
+    /**
+     * @see MediaQueueManager.selectAudioTrack
+     */
+    fun selectAudioTrack(streamIndex: Int): Boolean = mediaQueueManager.selectAudioTrack(streamIndex).also { success ->
+        if (success) playerOrNull?.logTracks(analyticsCollector)
+    }
+
+    /**
+     * @see MediaQueueManager.selectSubtitle
+     */
+    fun selectSubtitle(streamIndex: Int): Boolean = mediaQueueManager.selectSubtitle(streamIndex).also { success ->
+        if (success) playerOrNull?.logTracks(analyticsCollector)
     }
 
     /**
@@ -325,10 +401,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
         audioManager.setStreamVolume(stream, scaled, 0)
     }
 
-    fun getPlayerRendererIndex(type: Int): Int {
-        return playerOrNull?.getRendererIndexByType(type) ?: -1
-    }
-
     @SuppressLint("SwitchIntDef")
     override fun onPlayerStateChanged(playWhenReady: Boolean, playbackState: Int) {
         val player = playerOrNull ?: return
@@ -338,7 +410,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
 
         // Initialise various components
         if (playbackState == Player.STATE_READY) {
-            mediaQueueManager.selectInitialTracks()
+            if (!initialTracksSelected.getAndSet(true)) {
+                mediaQueueManager.selectInitialTracks()
+            }
             mediaSession.isActive = true
             notificationHelper.postNotification()
         }
@@ -371,6 +445,19 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
                         releasePlayer()
                 }
             }
+        }
+    }
+
+    override fun onPlayerError(error: PlaybackException) {
+        if (error.cause is MediaCodecDecoderException && !fallbackPreferExtensionRenderers) {
+            Timber.e(error.cause, "Decoder failed, attempting to restart playback with decoder extensions preferred")
+            playerOrNull?.run {
+                removeListener(this@PlayerViewModel)
+                release()
+            }
+            fallbackPreferExtensionRenderers = true
+            setupPlayer()
+            mediaQueueManager.tryRestartPlayback()
         }
     }
 
